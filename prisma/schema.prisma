@@ -1,0 +1,187 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  production_user
+}
+
+enum FormStatus {
+  draft
+  published
+  archived
+}
+
+enum QuestionType {
+  text
+  number
+  date
+  dropdown
+  single_choice
+  multiple_choice
+  file_upload
+  image_upload
+}
+
+enum SubmissionStatus {
+  in_progress
+  completed
+  abandoned
+}
+
+model Profile {
+  id           String   @id @db.Uuid
+  email        String   @unique
+  fullName     String?
+  role         UserRole @default(production_user)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  createdForms Form[]       @relation("FormCreatedBy")
+  submissions  Submission[]
+
+  @@map("profiles")
+}
+
+model Form {
+  id                    String     @id @default(uuid()) @db.Uuid
+  title                 String
+  description           String?
+  status                FormStatus @default(draft)
+  version               Int        @default(1)
+  allowEditsAfterSubmit Boolean    @default(false)
+  createdById           String     @db.Uuid
+  publishedAt           DateTime?
+  archivedAt            DateTime?
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+
+  createdBy   Profile      @relation("FormCreatedBy", fields: [createdById], references: [id])
+  sections    Section[]
+  submissions Submission[]
+
+  @@index([status])
+  @@index([createdById])
+  @@map("forms")
+}
+
+model Section {
+  id              String    @id @default(uuid()) @db.Uuid
+  formId          String    @db.Uuid
+  title           String
+  description     String?
+  orderIndex      Int
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  form            Form              @relation(fields: [formId], references: [id], onDelete: Cascade)
+  questions       Question[]
+  sectionProgress SectionProgress[]
+
+  @@unique([formId, orderIndex])
+  @@index([formId])
+  @@map("sections")
+}
+
+model Question {
+  id         String       @id @default(uuid()) @db.Uuid
+  sectionId  String       @db.Uuid
+  label      String
+  helpText   String?
+  type       QuestionType
+  isRequired Boolean      @default(false)
+  orderIndex Int
+  configJson Json?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  section Section          @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  options QuestionOption[]
+  answers Answer[]
+
+  @@unique([sectionId, orderIndex])
+  @@index([sectionId])
+  @@index([type])
+  @@map("questions")
+}
+
+model QuestionOption {
+  id         String  @id @default(uuid()) @db.Uuid
+  questionId String  @db.Uuid
+  label      String
+  value      String
+  orderIndex Int
+  isActive   Boolean @default(true)
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, value])
+  @@unique([questionId, orderIndex])
+  @@index([questionId])
+  @@map("question_options")
+}
+
+model Submission {
+  id         String           @id @default(uuid()) @db.Uuid
+  formId     String           @db.Uuid
+  userId     String           @db.Uuid
+  status     SubmissionStatus @default(in_progress)
+  startedAt  DateTime         @default(now())
+  submittedAt DateTime?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  form            Form              @relation(fields: [formId], references: [id], onDelete: Cascade)
+  user            Profile           @relation(fields: [userId], references: [id])
+  answers         Answer[]
+  sectionProgress SectionProgress[]
+
+  @@index([formId])
+  @@index([userId])
+  @@index([status])
+  @@map("submissions")
+}
+
+model SectionProgress {
+  id           String   @id @default(uuid()) @db.Uuid
+  submissionId String   @db.Uuid
+  sectionId    String   @db.Uuid
+  isCompleted  Boolean  @default(false)
+  completedAt  DateTime?
+  updatedAt    DateTime @updatedAt
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  section    Section    @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@unique([submissionId, sectionId])
+  @@index([sectionId])
+  @@map("section_progress")
+}
+
+model Answer {
+  id              String   @id @default(uuid()) @db.Uuid
+  submissionId    String   @db.Uuid
+  questionId      String   @db.Uuid
+  textValue       String?
+  numberValue     Decimal? @db.Decimal(18, 4)
+  dateValue       DateTime?
+  selectedOptions Json?
+  filePath        String?
+  fileUrl         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  question   Question   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([submissionId, questionId])
+  @@index([questionId])
+  @@map("answers")
+}
